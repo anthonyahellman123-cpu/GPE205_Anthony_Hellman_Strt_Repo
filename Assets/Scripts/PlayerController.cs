@@ -1,30 +1,27 @@
+
 using UnityEngine;
 
 public class PlayerController : Controller
 {
     public KeyCode moveForwardKey;
-
     public KeyCode moveBackwardKey;
-
     public KeyCode rotateClockwiseKey;
-
     public KeyCode rotateCounterClockwiseKey;
+    public KeyCode shootKey = KeyCode.Space;
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     public override void Start()
     {
-        base.Start(); 
+        base.Start();
     }
 
-    // Update is called once per frame
     public override void Update()
     {
-        ProcessInputs();  
+        ProcessInputs();
         base.Update();
     }
+
     public override void ProcessInputs()
     {
-
         if (Input.GetKey(moveForwardKey))
         {
             pawn.moveForward();
@@ -45,6 +42,14 @@ public class PlayerController : Controller
             pawn.rotateCounterClockwise();
         }
 
-    }
+        if (Input.GetKey(shootKey))
+        {
+            TankPawn tank = pawn as TankPawn;
 
+            if (tank != null)
+            {
+                tank.Shoot();
+            }
+        }
+    }
 }

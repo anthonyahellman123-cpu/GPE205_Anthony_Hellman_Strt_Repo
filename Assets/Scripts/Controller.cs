@@ -1,18 +1,22 @@
+
 using UnityEngine;
 
 public abstract class Controller : MonoBehaviour
 {
     public Pawn pawn;
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-   public virtual void Start()
+
+    // Called when the controller starts.
+    public virtual void Start()
     {
-        
+
     }
 
-    // Update is called once per frame
+    // Process controller input every frame.
     public virtual void Update()
     {
-        
+        ProcessInputs();
     }
+
+    // Each controller decides how to control its pawn.
     public abstract void ProcessInputs();
 }

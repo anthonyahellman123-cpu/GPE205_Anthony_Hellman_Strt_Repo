@@ -1,32 +1,74 @@
+
 using UnityEngine;
 
 public class TankPawn : Pawn
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    [Header("Shooting")]
+    public TankShooter shooter;
+
+    private NoiseMaker noiseMaker;
+
     public override void Start()
     {
         base.Start();
+
+        if (shooter == null)
+        {
+            shooter = GetComponent<TankShooter>();
+        }
+
+        noiseMaker = GetComponent<NoiseMaker>();
     }
 
-    // Update is called once per frame
-    public override void Update()
-    {
-        base.Update();
-    }
     public override void moveForward()
     {
-        mover.Move(transform.forward, moveSpeed);
+        if (mover != null)
+        {
+            mover.Move(transform.forward, moveSpeed);
+            MakeMovementNoise();
+        }
     }
+
     public override void moveBackward()
     {
-        mover.Move(transform.forward, -moveSpeed);
-   }
+        if (mover != null)
+        {
+            mover.Move(-transform.forward, moveSpeed);
+            MakeMovementNoise();
+        }
+    }
+
     public override void rotateClockwise()
     {
-        mover.Rotate(turnSpeed);
+        if (mover != null)
+        {
+            mover.Rotate(turnSpeed);
+            MakeMovementNoise();
+        }
     }
+
     public override void rotateCounterClockwise()
     {
-        mover.Rotate(-turnSpeed);
+        if (mover != null)
+        {
+            mover.Rotate(-turnSpeed);
+            MakeMovementNoise();
+        }
+    }
+
+    public void Shoot()
+    {
+        if (shooter != null)
+        {
+            shooter.Shoot();
+        }
+    }
+
+    private void MakeMovementNoise()
+    {
+        if (noiseMaker != null)
+        {
+            noiseMaker.MakeMovementNoise();
+        }
     }
 }
