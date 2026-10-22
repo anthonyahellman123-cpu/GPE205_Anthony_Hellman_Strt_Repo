@@ -11,9 +11,30 @@ public class FleeAIController : AIController
     public float minimumRetreatDistance = 8f;
     public float maximumRetreatDistance = 25f;
     public float safePointStoppingDistance = 2f;
+    public float stuckTime = 2f;
+    public float stuckMovementThreshold = 0.5f;
+
+    [Header("Combat")]
+    public float attackRange = 18f;
+    public float retreatTime = 3f;
+    public float attackTime = 1.5f;
 
     private Vector3 safePosition;
-    private bool isFleeing = false;
+    private Vector3 lastPosition;
+
+    private float stuckTimer;
+    private float stateTimer;
+
+    private bool isFleeing;
+    private bool isAttacking;
+
+    public override void Start()
+    {
+        base.Start();
+
+        if (pawn != null)
+            lastPosition = pawn.transform.position;
+    }
 
     public override void ProcessInputs()
     {
@@ -22,66 +43,135 @@ public class FleeAIController : AIController
 
         float distanceToPlayer = DistanceToTarget();
 
-        // Start fleeing when the player gets too close.
         if (!isFleeing && distanceToPlayer <= fleeDistance)
         {
-            isFleeing = true;
-            CalculateSafePoint();
+            StartFleeing();
         }
 
-        // Stop fleeing once the player is far enough away.
-        if (isFleeing && distanceToPlayer >= safeDistance)
+        if (!isFleeing)
+        {
+            currentState = AIState.Idle;
+            return;
+        }
+
+        if (distanceToPlayer >= safeDistance)
         {
             StopFleeing();
+            return;
         }
 
-        currentState = isFleeing ? AIState.Flee : AIState.Idle;
+        stateTimer -= Time.deltaTime;
 
-        switch (currentState)
+        if (isAttacking)
         {
-            case AIState.Idle:
-                break;
+            currentState = AIState.Attack;
 
-            case AIState.Flee:
-                FleeToSafety();
-                break;
+            if (distanceToPlayer <= attackRange)
+                AttackTarget();
+
+            if (stateTimer <= 0f)
+            {
+                isAttacking = false;
+                stateTimer = retreatTime;
+                CalculateSafePoint();
+            }
+
+            return;
         }
+
+        currentState = AIState.Flee;
+
+        CheckIfStuck();
+
+        if (stateTimer <= 0f)
+        {
+            isAttacking = true;
+            stateTimer = attackTime;
+            return;
+        }
+
+        FleeToSafety();
+    }
+
+    private void StartFleeing()
+    {
+        isFleeing = true;
+        isAttacking = false;
+
+        stateTimer = retreatTime;
+        stuckTimer = 0f;
+
+        lastPosition = pawn.transform.position;
+
+        CalculateSafePoint();
     }
 
     private void CalculateSafePoint()
     {
-        Vector3 awayFromPlayer =
-            pawn.transform.position - target.transform.position;
+        Level level = GameManager.instance != null
+            ? GameManager.instance.currentLevel
+            : null;
 
-        awayFromPlayer.y = 0f;
+        RoomTile[,] rooms = level != null ? level.Rooms : null;
 
-        if (awayFromPlayer.sqrMagnitude < 0.01f)
+        if (rooms == null)
         {
-            awayFromPlayer = -pawn.transform.forward;
+            Vector3 away = pawn.transform.position
+                - target.transform.position;
+
+            away.y = 0f;
+
+            if (away.sqrMagnitude < 0.01f)
+                away = -pawn.transform.forward;
+
+            safePosition = pawn.transform.position
+                + away.normalized * minimumRetreatDistance;
+
+            return;
         }
 
-        awayFromPlayer.Normalize();
+        float bestScore = float.NegativeInfinity;
+        Vector3 bestPosition = pawn.transform.position;
 
-        // Closer player = larger retreat distance.
-        float closeness = 1f - Mathf.Clamp01(
-            DistanceToTarget() / Mathf.Max(fleeDistance, 0.01f)
-        );
+        for (int col = 0; col < rooms.GetLength(0); col++)
+        {
+            for (int row = 0; row < rooms.GetLength(1); row++)
+            {
+                RoomTile room = rooms[col, row];
 
-        float retreatDistance = Mathf.Lerp(
-            minimumRetreatDistance,
-            maximumRetreatDistance,
-            closeness
-        );
+                if (room == null || room.aiSpawn == null)
+                    continue;
 
-        safePosition = pawn.transform.position
-                     + awayFromPlayer * retreatDistance;
+                Vector3 candidate = room.aiSpawn.position;
 
-        Debug.Log(
-            "Flee Tank: Player distance = "
-            + DistanceToTarget().ToString("F1")
-            + ", retreat distance = "
-            + retreatDistance.ToString("F1")
-        );
+                float distanceFromPlayer = Vector3.Distance(
+                    candidate,
+                    target.transform.position
+                );
+
+                float travelDistance = Vector3.Distance(
+                    candidate,
+                    pawn.transform.position
+                );
+
+                if (travelDistance < minimumRetreatDistance)
+                    continue;
+
+                float score = distanceFromPlayer
+                    - travelDistance * 0.25f
+                    + Random.Range(0f, 5f);
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestPosition = candidate;
+                }
+            }
+        }
+
+        safePosition = bestScore > float.NegativeInfinity
+            ? bestPosition
+            : pawn.transform.position;
     }
 
     private void FleeToSafety()
@@ -91,16 +181,43 @@ public class FleeAIController : AIController
 
         if (difference.magnitude <= safePointStoppingDistance)
         {
-            StopFleeing();
+            CalculateSafePoint();
             return;
         }
 
         MoveTowards(safePosition);
     }
 
+    private void CheckIfStuck()
+    {
+        float movement = Vector3.Distance(
+            pawn.transform.position,
+            lastPosition
+        );
+
+        if (movement < stuckMovementThreshold)
+        {
+            stuckTimer += Time.deltaTime;
+        }
+        else
+        {
+            stuckTimer = 0f;
+        }
+
+        if (stuckTimer >= stuckTime)
+        {
+            CalculateSafePoint();
+            stuckTimer = 0f;
+        }
+
+        lastPosition = pawn.transform.position;
+    }
+
     private void StopFleeing()
     {
         isFleeing = false;
+        isAttacking = false;
+        stuckTimer = 0f;
         currentState = AIState.Idle;
     }
 }
