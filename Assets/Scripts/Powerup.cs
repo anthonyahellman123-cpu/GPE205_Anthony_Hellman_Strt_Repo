@@ -1,4 +1,3 @@
-
 [System.Serializable]
 public abstract class Powerup
 {

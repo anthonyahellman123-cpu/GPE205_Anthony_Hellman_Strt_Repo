@@ -42,7 +42,7 @@ public class Projectile : MonoBehaviour
 
         if (health != null)
         {
-            health.TakeDamage(damage);
+            health.TakeDamage(damage, owner);
         }
 
         Destroy(gameObject);

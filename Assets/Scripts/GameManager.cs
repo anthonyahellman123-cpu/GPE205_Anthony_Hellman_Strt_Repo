@@ -1,4 +1,5 @@
 
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -31,10 +32,29 @@ public class GameManager : MonoBehaviour
     [Header("Player Respawning")]
     public float respawnDelay = 3f;
 
-    [Header("Active AI Controllers")]
-    public List<AIController> activeAI = new List<AIController>();
+    [Header("Player Lives")]
+    public int startingLives = 3;
 
-    private readonly List<GameObject> spawnedObjects = new List<GameObject>();
+    [Header("AI Respawning")]
+    public float aiRespawnDelay = 5f;
+
+    [Header("Active AI Controllers")]
+    public List<AIController> activeAI =
+        new List<AIController>();
+
+    [Header("Game Status")]
+    public int livesRemaining;
+    public int playerScore;
+    public int playerKills;
+    public int highScore;
+    public bool isGameOver;
+
+    private readonly List<GameObject> spawnedObjects =
+        new List<GameObject>();
+
+    private readonly Dictionary<AIController, GameObject[]>
+        aiRespawnPrefabs =
+        new Dictionary<AIController, GameObject[]>();
 
     private TankPawn playerPawn;
     private PlayerController playerController;
@@ -53,12 +73,18 @@ public class GameManager : MonoBehaviour
 
         instance = this;
         DontDestroyOnLoad(gameObject);
+
+        highScore = PlayerPrefs.GetInt("HighScore", 0);
     }
 
     private void Update()
     {
-        if (!spawnOnMapGenerated || !playerHasSpawned)
+        if (!spawnOnMapGenerated ||
+            !playerHasSpawned ||
+            isGameOver)
+        {
             return;
+        }
 
         if (playerPawn != null)
             return;
@@ -68,13 +94,28 @@ public class GameManager : MonoBehaviour
             waitingToRespawn = true;
             respawnTimer = respawnDelay;
 
+            // Save score before destroying the controller.
             if (playerController != null)
             {
+                playerScore = playerController.score;
+                playerKills = playerController.kills;
+
                 Destroy(playerController.gameObject);
                 playerController = null;
             }
 
+            livesRemaining--;
+
+            Debug.Log("Player died! Lives remaining: " +
+                livesRemaining);
+
             ClearAITargets();
+
+            if (livesRemaining <= 0)
+            {
+                GameOver();
+                return;
+            }
         }
 
         respawnTimer -= Time.deltaTime;
@@ -88,7 +129,8 @@ public class GameManager : MonoBehaviour
             if (playerPawn != null)
             {
                 UpdateAITargets();
-                Debug.Log("Player respawned in a random room.");
+                Debug.Log("Player respawned! Lives: " +
+                    livesRemaining);
             }
         }
     }
@@ -98,14 +140,26 @@ public class GameManager : MonoBehaviour
         if (!spawnOnMapGenerated)
             return;
 
+        StopAllCoroutines();
+        aiRespawnPrefabs.Clear();
+
         waitingToRespawn = false;
         playerHasSpawned = false;
 
         ClearSpawnedObjects();
 
-        if (currentLevel == null || currentLevel.Rooms == null)
+        // Reset match variables.
+        livesRemaining = Mathf.Max(1, startingLives);
+        playerScore = 0;
+        playerKills = 0;
+        isGameOver = false;
+
+        if (currentLevel == null ||
+            currentLevel.Rooms == null)
         {
-            Debug.LogError("GameManager needs a generated Level.");
+            Debug.LogError(
+                "GameManager needs a generated Level."
+            );
             return;
         }
 
@@ -116,10 +170,28 @@ public class GameManager : MonoBehaviour
 
         playerHasSpawned = true;
 
-        SpawnAIWithController(chasingTankPrefab, chaseControllerPrefab);
-        SpawnAIWithController(fleeingTankPrefab, fleeControllerPrefab);
-        SpawnAIWithController(sentryTankPrefab, sentryControllerPrefab);
-        SpawnAIWithController(patrolTankPrefab, patrolControllerPrefab);
+        SpawnAIWithController(
+            chasingTankPrefab,
+            chaseControllerPrefab
+        );
+
+        SpawnAIWithController(
+            fleeingTankPrefab,
+            fleeControllerPrefab
+        );
+
+        SpawnAIWithController(
+            sentryTankPrefab,
+            sentryControllerPrefab
+        );
+
+        SpawnAIWithController(
+            patrolTankPrefab,
+            patrolControllerPrefab
+        );
+
+        Debug.Log("Game started! Lives: " +
+            livesRemaining);
     }
 
     private TankPawn SpawnPlayer()
@@ -131,7 +203,9 @@ public class GameManager : MonoBehaviour
             playerTankPrefab == null ||
             playerControllerPrefab == null)
         {
-            Debug.LogError("Player spawning references are missing.");
+            Debug.LogError(
+                "Player spawning references are missing."
+            );
             return null;
         }
 
@@ -143,14 +217,17 @@ public class GameManager : MonoBehaviour
 
         spawnedObjects.Add(tank);
 
-        foreach (Controller controller in tank.GetComponents<Controller>())
+        foreach (Controller controller
+            in tank.GetComponents<Controller>())
         {
             controller.enabled = false;
         }
 
         TankPawn pawn = tank.GetComponent<TankPawn>();
 
-        GameObject controllerObject = Instantiate(playerControllerPrefab);
+        GameObject controllerObject =
+            Instantiate(playerControllerPrefab);
+
         spawnedObjects.Add(controllerObject);
 
         PlayerController controllerScript =
@@ -158,14 +235,21 @@ public class GameManager : MonoBehaviour
 
         if (pawn == null || controllerScript == null)
         {
-            Debug.LogError("Player tank or controller component is missing.");
+            Debug.LogError(
+                "Player tank or controller component is missing."
+            );
             return null;
         }
 
         controllerScript.pawn = pawn;
         playerController = controllerScript;
 
-        TankShooter shooter = tank.GetComponent<TankShooter>();
+        // Restore score after respawning.
+        controllerScript.score = playerScore;
+        controllerScript.kills = playerKills;
+
+        TankShooter shooter =
+            tank.GetComponent<TankShooter>();
 
         if (shooter != null)
         {
@@ -186,7 +270,9 @@ public class GameManager : MonoBehaviour
             tankPrefab == null ||
             controllerPrefab == null)
         {
-            Debug.LogWarning("Skipping AI: spawning references are missing.");
+            Debug.LogWarning(
+                "Skipping AI: spawning references are missing."
+            );
             return;
         }
 
@@ -198,7 +284,8 @@ public class GameManager : MonoBehaviour
 
         spawnedObjects.Add(tank);
 
-        foreach (AIController oldController in tank.GetComponents<AIController>())
+        foreach (AIController oldController
+            in tank.GetComponents<AIController>())
         {
             oldController.enabled = false;
             UnregisterAI(oldController);
@@ -206,7 +293,9 @@ public class GameManager : MonoBehaviour
 
         TankPawn pawn = tank.GetComponent<TankPawn>();
 
-        GameObject controllerObject = Instantiate(controllerPrefab);
+        GameObject controllerObject =
+            Instantiate(controllerPrefab);
+
         spawnedObjects.Add(controllerObject);
 
         AIController controllerScript =
@@ -214,14 +303,17 @@ public class GameManager : MonoBehaviour
 
         if (pawn == null || controllerScript == null)
         {
-            Debug.LogError("AI tank or controller component is missing.");
+            Debug.LogError(
+                "AI tank or controller component is missing."
+            );
             return;
         }
 
         controllerScript.pawn = pawn;
         controllerScript.target = playerPawn;
 
-        TankShooter shooter = tank.GetComponent<TankShooter>();
+        TankShooter shooter =
+            tank.GetComponent<TankShooter>();
 
         if (shooter != null)
         {
@@ -229,6 +321,115 @@ public class GameManager : MonoBehaviour
         }
 
         RegisterAI(controllerScript);
+
+        aiRespawnPrefabs[controllerScript] =
+            new GameObject[]
+            {
+                tankPrefab,
+                controllerPrefab
+            };
+    }
+
+    public void OnTankDied(Health deadTank)
+    {
+        if (deadTank == null)
+            return;
+
+        AIController deadAI = null;
+
+        foreach (AIController ai in activeAI)
+        {
+            if (ai == null || ai.pawn == null)
+                continue;
+
+            if (ai.pawn.gameObject == deadTank.gameObject)
+            {
+                deadAI = ai;
+                break;
+            }
+        }
+
+        if (deadAI == null)
+            return;
+
+        GameObject[] prefabs;
+
+        if (!aiRespawnPrefabs.TryGetValue(
+            deadAI, out prefabs))
+        {
+            return;
+        }
+
+        UnregisterAI(deadAI);
+        aiRespawnPrefabs.Remove(deadAI);
+
+        deadAI.enabled = false;
+        Destroy(deadAI.gameObject);
+
+        if (!isGameOver)
+        {
+            StartCoroutine(
+                RespawnAI(prefabs[0], prefabs[1])
+            );
+        }
+    }
+
+    private IEnumerator RespawnAI(
+        GameObject tankPrefab,
+        GameObject controllerPrefab)
+    {
+        yield return new WaitForSeconds(aiRespawnDelay);
+
+        if (!spawnOnMapGenerated ||
+            !playerHasSpawned ||
+            isGameOver ||
+            currentLevel == null)
+        {
+            yield break;
+        }
+
+        SpawnAIWithController(
+            tankPrefab,
+            controllerPrefab
+        );
+
+        Debug.Log("AI tank respawned!");
+    }
+
+    public void UpdatePlayerScore(
+        int score,
+        int kills)
+    {
+        playerScore = score;
+        playerKills = kills;
+    }
+
+    private void GameOver()
+    {
+        isGameOver = true;
+        waitingToRespawn = false;
+
+        StopAllCoroutines();
+        ClearAITargets();
+
+        if (playerController != null)
+        {
+            playerScore = playerController.score;
+            playerKills = playerController.kills;
+        }
+
+        if (playerScore > highScore)
+        {
+            highScore = playerScore;
+            PlayerPrefs.SetInt("HighScore", highScore);
+            PlayerPrefs.Save();
+        }
+
+        Debug.Log("========== GAME OVER ==========");
+        Debug.Log("Final Score: " + playerScore);
+        Debug.Log("Total Kills: " + playerKills);
+        Debug.Log("High Score: " + highScore);
+        Debug.Log("===============================");
     }
 
     private void ClearAITargets()
@@ -236,9 +437,7 @@ public class GameManager : MonoBehaviour
         foreach (AIController ai in activeAI)
         {
             if (ai != null)
-            {
                 ai.target = null;
-            }
         }
     }
 
@@ -247,9 +446,7 @@ public class GameManager : MonoBehaviour
         foreach (AIController ai in activeAI)
         {
             if (ai != null)
-            {
                 ai.target = playerPawn;
-            }
         }
     }
 
@@ -259,7 +456,8 @@ public class GameManager : MonoBehaviour
         {
             if (obj != null)
             {
-                foreach (Controller controller in obj.GetComponents<Controller>())
+                foreach (Controller controller
+                    in obj.GetComponents<Controller>())
                 {
                     controller.enabled = false;
                 }
@@ -269,10 +467,8 @@ public class GameManager : MonoBehaviour
         }
 
         spawnedObjects.Clear();
-
-        activeAI.RemoveAll(
-            ai => ai == null || !ai.enabled
-        );
+        activeAI.Clear();
+        aiRespawnPrefabs.Clear();
 
         playerPawn = null;
         playerController = null;
@@ -281,9 +477,7 @@ public class GameManager : MonoBehaviour
     public void RegisterAI(AIController ai)
     {
         if (ai != null && !activeAI.Contains(ai))
-        {
             activeAI.Add(ai);
-        }
     }
 
     public void UnregisterAI(AIController ai)
@@ -291,7 +485,9 @@ public class GameManager : MonoBehaviour
         activeAI.Remove(ai);
     }
 
-    public void SpawnAI(GameObject prefab, Transform spawnPoint)
+    public void SpawnAI(
+        GameObject prefab,
+        Transform spawnPoint)
     {
         if (prefab == null || spawnPoint == null)
             return;
@@ -305,13 +501,19 @@ public class GameManager : MonoBehaviour
 
     public RoomTile GetRandomRoom()
     {
-        if (currentLevel == null || currentLevel.Rooms == null)
+        if (currentLevel == null ||
+            currentLevel.Rooms == null)
+        {
             return null;
+        }
 
         RoomTile[,] rooms = currentLevel.Rooms;
 
-        int randomCol = Random.Range(0, rooms.GetLength(0));
-        int randomRow = Random.Range(0, rooms.GetLength(1));
+        int randomCol =
+            Random.Range(0, rooms.GetLength(0));
+
+        int randomRow =
+            Random.Range(0, rooms.GetLength(1));
 
         return rooms[randomCol, randomRow];
     }
@@ -333,7 +535,8 @@ public class GameManager : MonoBehaviour
             }
 
             float distanceSquared =
-                (ai.pawn.transform.position - searchPosition).sqrMagnitude;
+                (ai.pawn.transform.position -
+                 searchPosition).sqrMagnitude;
 
             if (distanceSquared < nearestDistanceSquared)
             {

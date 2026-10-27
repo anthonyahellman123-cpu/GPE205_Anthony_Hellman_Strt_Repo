@@ -312,7 +312,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TankPawn
   moveSpeed: 5
-  turnSpeed: 360
+  turnSpeed: 240
   mover: {fileID: 0}
   shooter: {fileID: 0}
 --- !u!114 &3598312158303659096
